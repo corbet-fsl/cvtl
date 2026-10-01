@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
         persist-credentials: false
@@ -27,7 +27,7 @@ jobs:
         date -u +%FT%TZ >> resolver.txt
 
         sha256sum Cargo.lock >> resolver.txt'
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: resolved-lock
         path: 'Cargo.lock
@@ -47,11 +47,11 @@ jobs:
     env:
       VALKEY_URL: redis://127.0.0.1:6379/
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
         persist-credentials: false
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       with:
         name: resolved-lock
     - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
@@ -68,7 +68,7 @@ jobs:
       run: 'cargo fmt --all
 
         git diff --exit-code -- ''*.rs'' > format.patch'
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       if: failure()
       with:
         name: format
@@ -79,7 +79,7 @@ jobs:
       with:
         tool: cargo-deny
     - run: cargo deny --locked check advisories
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       if: always()
       with:
         name: dependency-lock
@@ -96,11 +96,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
         persist-credentials: false
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       with:
         name: resolved-lock
     - run: python3 .github/check-first-party.py
@@ -111,11 +111,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
         persist-credentials: false
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       with:
         name: resolved-lock
     - uses: dtolnay/rust-toolchain@nightly
@@ -142,7 +142,7 @@ jobs:
       run: cargo llvm-cov report --locked --branch --ignore-filename-regex '/tests/' --text > coverage.txt
     - name: Require complete line and branch coverage
       run: python3 .github/check-coverage.py coverage.lcov coverage.json coverage.txt
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       if: always()
       with:
         name: coverage
