@@ -44,6 +44,65 @@ impl Network for Controlled {
         }
     }
 }
+// Same refusal vector through both real facade variants: closing one scope
+// through a clone refuses on all its clones while an independent scope on the
+// same backend keeps its record and stays writable.
+async fn refusal_isolation<S>(victim: &S, survivor: &S, live: u64, replacement: u64)
+where
+    S: Store + Clone,
+{
+    victim
+        .compare_exchange(&[write("refusal", "g", 1, live)])
+        .await
+        .unwrap();
+    survivor
+        .compare_exchange(&[write("refusal", "g", 1, live)])
+        .await
+        .unwrap();
+    assert_eq!(
+        victim.get("refusal").await.unwrap().unwrap().revision,
+        Revision([1; 16])
+    );
+    assert_eq!(
+        survivor.get("refusal").await.unwrap().unwrap().revision,
+        Revision([1; 16])
+    );
+    let through = victim.clone();
+    through.close();
+    assert_eq!(victim.state(), State::Closed);
+    assert_eq!(through.state(), State::Closed);
+    assert_eq!(victim.get("refusal").await, Err(Error::Closed));
+    assert_eq!(through.get("refusal").await, Err(Error::Closed));
+    assert_eq!(
+        victim
+            .compare_exchange(&[write("refusal", "g", 9, live)])
+            .await,
+        Err(Error::Closed)
+    );
+    assert_eq!(
+        through
+            .compare_exchange(&[write("refusal", "g", 9, live)])
+            .await,
+        Err(Error::Closed)
+    );
+    assert_eq!(victim.maintain().await, Err(Error::Closed));
+    assert_eq!(through.maintain().await, Err(Error::Closed));
+    assert_eq!(victim.state(), State::Closed);
+    assert_eq!(through.state(), State::Closed);
+    assert_eq!(survivor.state(), State::Ready);
+    assert_eq!(
+        survivor.get("refusal").await.unwrap().unwrap().revision,
+        Revision([1; 16])
+    );
+    let mut update = write("refusal", "g", 2, replacement);
+    update.expected = Some(Revision([1; 16]));
+    survivor.compare_exchange(&[update]).await.unwrap();
+    assert_eq!(
+        survivor.get("refusal").await.unwrap().unwrap().revision,
+        Revision([2; 16])
+    );
+    assert_eq!(survivor.state(), State::Ready);
+}
 #[tokio::test]
 async fn identical_suite_through_both_facade_variants() {
     let start = SystemTime::now()
@@ -68,6 +127,22 @@ async fn identical_suite_through_both_facade_variants() {
     assert!(a.reopen().await.unwrap().is_empty());
     assert_eq!(a.clone().state(), State::Ready);
     assert_eq!(a.maintain().await.unwrap(), 0);
+    let victim: Volatile<_> = Volatile::memory(
+        Scope::new("memory-victim", "facade").unwrap(),
+        limits(),
+        clock.clone(),
+    )
+    .unwrap();
+    let survivor: Volatile<_> = Volatile::memory(
+        Scope::new("memory-survivor", "facade").unwrap(),
+        limits(),
+        clock.clone(),
+    )
+    .unwrap();
+    refusal_isolation(&victim, &survivor, start + 5000, start + 6000).await;
+    assert!(victim.reopen().await.unwrap().is_empty());
+    assert_eq!(victim.state(), State::Closed);
+    assert_eq!(survivor.state(), State::Ready);
     run(&a, &b, &clock).await;
     assert_eq!(format!("{a:?}"), "Volatile(Memory)");
     assert!(a.reopen().await.unwrap().is_empty());
@@ -117,6 +192,26 @@ async fn identical_suite_through_both_facade_variants() {
     );
     assert_eq!(a.clone().state(), State::Ready);
     assert_eq!(a.maintain().await.unwrap(), 0);
+    let victim = Volatile::valkey(
+        network.clone(),
+        Scope::new("valkey-victim", "facade").unwrap(),
+        limits(),
+        clock.clone(),
+    )
+    .await
+    .unwrap();
+    let survivor = Volatile::valkey(
+        network.clone(),
+        Scope::new("valkey-survivor", "facade").unwrap(),
+        limits(),
+        clock.clone(),
+    )
+    .await
+    .unwrap();
+    refusal_isolation(&victim, &survivor, start + 5000, start + 6000).await;
+    assert_eq!(victim.reopen().await, Err(Error::Closed));
+    assert_eq!(victim.state(), State::Closed);
+    assert_eq!(survivor.state(), State::Ready);
     run(&a, &b, &clock).await;
     assert_eq!(format!("{a:?}"), "Volatile(Valkey)");
     assert_eq!(a.reopen().await, Err(Error::Closed));
