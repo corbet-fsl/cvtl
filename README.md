@@ -22,7 +22,30 @@ through both variants against memory and disposable Valkey. FSL-1.1-ALv2.
 
 ## Scope
 
-Select and route the actual Memory or Valkey child at startup. Re-export the shared port and child readiness/warnings without a second store, fallback, identity, quota policy or member lifecycle.
+### Purpose
+
+Storage that forgets: one expiring storage port for the forum, where every write requires an expiry.
+
+### Owns
+
+- Selecting either the Valkey-backed child (cvlk) or the in-memory child (cmmr) at service startup and routing a single scoped storage port to it, using the supplied connection, scope, limits, and clock.
+- Serving as the forum's only storage path, with one connection for the service.
+
+### Never
+
+- Adds durable database engines, credential stores, domain admission decisions, an eviction policy that revives expired presence, or more than one storage connection.
+- Falls back to durable storage when a backend refuses an operation.
+- Owns domain queries or record lifetimes; those stay with the presence, lookup, and room libraries.
+
+### States
+
+Derived from the selected child: Closed, Ready (naming the active backend), or Unavailable.
+
+### Test obligations
+
+- The same presence, lookup, and throttle suite runs unchanged against both backends.
+- A write without an expiry is impossible at the port.
+- A backend refusal reaches the caller without fallback to another store.
 
 ## Continuous verification
 
