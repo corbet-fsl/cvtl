@@ -103,6 +103,105 @@ where
     );
     assert_eq!(survivor.state(), State::Ready);
 }
+// Same Capacity vector through both real facade variants: a scope filled to
+// the existing record limit refuses a mixed batch (one replacement plus one
+// overflow insertion) with exactly Error::Capacity, applies neither half, and
+// leaves an independent scope on the same backend untouched. Deleting one
+// generation frees space so the identical batch succeeds; there is no fallback.
+async fn capacity_refusal<S>(pressured: &S, survivor: &S, live: u64)
+where
+    S: Store,
+{
+    survivor
+        .compare_exchange(&[write("s", "s", 20, live)])
+        .await
+        .unwrap();
+    pressured
+        .compare_exchange(&[
+            write("target", "keep", 1, live),
+            write("a", "drop", 2, live),
+            write("b", "drop", 3, live),
+            write("c", "drop", 4, live),
+        ])
+        .await
+        .unwrap();
+    let mut replacement = write("target", "keep", 9, live);
+    replacement.expected = Some(Revision([1; 16]));
+    replacement.record.indexes = vec!["moved".into()];
+    let batch = [replacement, write("overflow", "keep", 10, live)];
+    assert_eq!(
+        pressured.compare_exchange(&batch).await,
+        Err(Error::Capacity)
+    );
+    // Refusal degrades nothing: the facade stays Ready, never falling back.
+    assert_eq!(pressured.state(), State::Ready);
+    assert_eq!(survivor.state(), State::Ready);
+    // Neither half applied: the target keeps its revision and index, the
+    // overflow key is absent, and the replacement index stays empty.
+    assert_eq!(
+        pressured.get("target").await.unwrap().unwrap().revision,
+        Revision([1; 16])
+    );
+    assert_eq!(pressured.get("overflow").await.unwrap(), None);
+    assert!(
+        pressured
+            .page("moved", None, 2)
+            .await
+            .unwrap()
+            .records
+            .is_empty()
+    );
+    let first = pressured.page("visible", None, 2).await.unwrap();
+    let second = pressured
+        .page("visible", first.next.as_ref(), 2)
+        .await
+        .unwrap();
+    let mut keys: Vec<_> = first
+        .records
+        .iter()
+        .chain(&second.records)
+        .map(|r| r.key.as_str())
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(keys, vec!["a", "b", "c", "target"]);
+    // The independent scope is unchanged and still writable.
+    assert_eq!(
+        survivor.get("s").await.unwrap().unwrap().revision,
+        Revision([20; 16])
+    );
+    survivor
+        .compare_exchange(&[write("s-extra", "s", 21, live)])
+        .await
+        .unwrap();
+    // Deleting one generation frees space; the identical batch now succeeds.
+    assert_eq!(pressured.delete_generation("drop").await.unwrap(), 3);
+    assert_eq!(pressured.get("a").await.unwrap(), None);
+    pressured.compare_exchange(&batch).await.unwrap();
+    assert_eq!(
+        pressured.get("target").await.unwrap().unwrap().revision,
+        Revision([9; 16])
+    );
+    assert!(pressured.get("overflow").await.unwrap().is_some());
+    assert_eq!(
+        pressured
+            .page("moved", None, 2)
+            .await
+            .unwrap()
+            .records
+            .len(),
+        1
+    );
+    let visible = pressured.page("visible", None, 2).await.unwrap();
+    assert_eq!(visible.records.len(), 1);
+    assert_eq!(visible.records[0].key, "overflow");
+    assert_eq!(
+        survivor.get("s").await.unwrap().unwrap().revision,
+        Revision([20; 16])
+    );
+    assert!(survivor.get("s-extra").await.unwrap().is_some());
+    assert_eq!(pressured.state(), State::Ready);
+    assert_eq!(survivor.state(), State::Ready);
+}
 #[tokio::test]
 async fn identical_suite_through_both_facade_variants() {
     let start = SystemTime::now()
@@ -143,6 +242,19 @@ async fn identical_suite_through_both_facade_variants() {
     assert!(victim.reopen().await.unwrap().is_empty());
     assert_eq!(victim.state(), State::Closed);
     assert_eq!(survivor.state(), State::Ready);
+    let pressured: Volatile<_> = Volatile::memory(
+        Scope::new("memory-cap", "facade").unwrap(),
+        limits(),
+        clock.clone(),
+    )
+    .unwrap();
+    let cap_survivor: Volatile<_> = Volatile::memory(
+        Scope::new("memory-cap-survivor", "facade").unwrap(),
+        limits(),
+        clock.clone(),
+    )
+    .unwrap();
+    capacity_refusal(&pressured, &cap_survivor, start + 5000).await;
     run(&a, &b, &clock).await;
     assert_eq!(format!("{a:?}"), "Volatile(Memory)");
     assert!(a.reopen().await.unwrap().is_empty());
@@ -212,6 +324,23 @@ async fn identical_suite_through_both_facade_variants() {
     assert_eq!(victim.reopen().await, Err(Error::Closed));
     assert_eq!(victim.state(), State::Closed);
     assert_eq!(survivor.state(), State::Ready);
+    let pressured = Volatile::valkey(
+        network.clone(),
+        Scope::new("valkey-cap", "facade").unwrap(),
+        limits(),
+        clock.clone(),
+    )
+    .await
+    .unwrap();
+    let cap_survivor = Volatile::valkey(
+        network.clone(),
+        Scope::new("valkey-cap-survivor", "facade").unwrap(),
+        limits(),
+        clock.clone(),
+    )
+    .await
+    .unwrap();
+    capacity_refusal(&pressured, &cap_survivor, start + 5000).await;
     run(&a, &b, &clock).await;
     assert_eq!(format!("{a:?}"), "Volatile(Valkey)");
     assert_eq!(a.reopen().await, Err(Error::Closed));
