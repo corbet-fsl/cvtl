@@ -67,6 +67,30 @@ where
         survivor.get("refusal").await.unwrap().unwrap().revision,
         Revision([1; 16])
     );
+    // Positive controls while open: paged bytes are visible, a real cursor
+    // is issued, and generation deletion removes real bytes.
+    let victim_page = victim.page("visible", None, 2).await.unwrap();
+    assert_eq!(victim_page.records.len(), 1);
+    assert_eq!(victim_page.records[0].key, "refusal");
+    assert_eq!(victim_page.records[0].value, vec![0, 255, 13]);
+    let survivor_page = survivor.page("visible", None, 2).await.unwrap();
+    assert_eq!(survivor_page.records.len(), 1);
+    assert_eq!(survivor_page.records[0].value, vec![0, 255, 13]);
+    let first = victim.page("visible", None, 1).await.unwrap();
+    assert_eq!(first.records.len(), 1);
+    let cursor = first.next.unwrap();
+    victim
+        .compare_exchange(&[write("scratch", "scratch-gen", 5, live)])
+        .await
+        .unwrap();
+    assert_eq!(
+        victim.get("scratch").await.unwrap().unwrap().value,
+        vec![0, 255, 13]
+    );
+    assert_eq!(victim.delete_generation("scratch-gen").await.unwrap(), 1);
+    assert_eq!(victim.get("scratch").await.unwrap(), None);
+    assert_eq!(victim.delete_generation("absent").await.unwrap(), 0);
+    assert_eq!(survivor.delete_generation("absent").await.unwrap(), 0);
     let through = victim.clone();
     through.close();
     assert_eq!(victim.state(), State::Closed);
@@ -87,6 +111,24 @@ where
     );
     assert_eq!(victim.maintain().await, Err(Error::Closed));
     assert_eq!(through.maintain().await, Err(Error::Closed));
+    assert_eq!(victim.delete_generation("g").await, Err(Error::Closed));
+    assert_eq!(through.delete_generation("g").await, Err(Error::Closed));
+    assert_eq!(
+        victim.page("visible", None, 2).await.unwrap_err(),
+        Error::Closed
+    );
+    assert_eq!(
+        through.page("visible", None, 2).await.unwrap_err(),
+        Error::Closed
+    );
+    assert_eq!(
+        victim.page("visible", Some(&cursor), 1).await.unwrap_err(),
+        Error::Closed
+    );
+    assert_eq!(
+        through.page("visible", Some(&cursor), 1).await.unwrap_err(),
+        Error::Closed
+    );
     assert_eq!(victim.state(), State::Closed);
     assert_eq!(through.state(), State::Closed);
     assert_eq!(survivor.state(), State::Ready);
@@ -94,6 +136,15 @@ where
         survivor.get("refusal").await.unwrap().unwrap().revision,
         Revision([1; 16])
     );
+    assert_eq!(
+        survivor.get("refusal").await.unwrap().unwrap().value,
+        vec![0, 255, 13]
+    );
+    let survivor_page = survivor.page("visible", None, 2).await.unwrap();
+    assert_eq!(survivor_page.records.len(), 1);
+    assert_eq!(survivor_page.records[0].revision, Revision([1; 16]));
+    assert_eq!(survivor_page.records[0].value, vec![0, 255, 13]);
+    assert_eq!(survivor.delete_generation("absent").await.unwrap(), 0);
     let mut update = write("refusal", "g", 2, replacement);
     update.expected = Some(Revision([1; 16]));
     survivor.compare_exchange(&[update]).await.unwrap();
