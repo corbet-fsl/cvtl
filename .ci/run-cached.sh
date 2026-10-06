@@ -75,4 +75,15 @@ rustup run nightly rustc -vV
 rustup run nightly cargo llvm-cov --version
 "$CCID_BIN" cached --repo "$PWD" --check verify
 test -s ".ccid/results/verify.jsonl"
-"$CCID_BIN" check --repo "$PWD" --check advisories
+# Surface the exact `cargo deny` report: run the fresh advisories check with
+# stdout+stderr captured to a job-local file, print it, and preserve the
+# original exit code (gate unchanged, no advisories disabled).
+advisories_log="$(mktemp)"
+if "$CCID_BIN" check --repo "$PWD" --check advisories >"$advisories_log" 2>&1; then
+  advisories_rc=0
+else
+  advisories_rc=$?
+fi
+cat "$advisories_log"
+rm -f "$advisories_log"
+exit "$advisories_rc"
