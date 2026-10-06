@@ -34,3 +34,5 @@ The selected Valkey child and existing `cthl` reexports supply distributed quota
 this facade adds no algorithm or separate ledger. Real adapter tests compare the
 same policy with governor-backed MemoryStore and verify capacity/unavailability
 propagation without fallback.
+
+`Store::check_current` atomically checks a bounded set of exact committed revisions and exclusive authority deadlines. It never renews a record, token or index. Missing, changed or expired entries refuse the whole read; Memory holds its existing mutex, and Valkey checks all conditions in one existing primary Lua invocation. The common real-backend conformance scenario exercises successful two-record reads, foreign scopes, mutations, missing rows, invalid bounds and exclusive expiry.
