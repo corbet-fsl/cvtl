@@ -157,6 +157,15 @@ async fn identical_suite_through_both_facade_variants() {
     );
     assert!(matches!(bad, Err(Error::Invalid)));
     clock.set(start);
+    // Unique Valkey keyspace per test-process execution: verify.sh runs cargo
+    // test then llvm-cov against one disposable Valkey, so the second phase
+    // would Conflict on the first phase's keys.
+    let run = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let scope = |base: &str| Scope::new(format!("{base}-{run}-{pid}"), "facade").unwrap();
     let connection =
         redis::Client::open(std::env::var("VALKEY_URL").expect("disposable Valkey required"))
             .unwrap()
@@ -169,22 +178,12 @@ async fn identical_suite_through_both_facade_variants() {
         clock: clock.clone(),
         lose_reply: AtomicBool::new(false),
     });
-    let a = Volatile::valkey(
-        network.clone(),
-        Scope::new("valkey-a", "facade").unwrap(),
-        limits(),
-        clock.clone(),
-    )
-    .await
-    .unwrap();
-    let b = Volatile::valkey(
-        network.clone(),
-        Scope::new("valkey-b", "facade").unwrap(),
-        limits(),
-        clock.clone(),
-    )
-    .await
-    .unwrap();
+    let a = Volatile::valkey(network.clone(), scope("valkey-a"), limits(), clock.clone())
+        .await
+        .unwrap();
+    let b = Volatile::valkey(network.clone(), scope("valkey-b"), limits(), clock.clone())
+        .await
+        .unwrap();
     assert_eq!(a.warnings(), network.health().await.unwrap().warnings);
     assert_eq!(
         a.reopen().await.unwrap(),
@@ -194,7 +193,7 @@ async fn identical_suite_through_both_facade_variants() {
     assert_eq!(a.maintain().await.unwrap(), 0);
     let victim = Volatile::valkey(
         network.clone(),
-        Scope::new("valkey-victim", "facade").unwrap(),
+        scope("valkey-victim"),
         limits(),
         clock.clone(),
     )
@@ -202,7 +201,7 @@ async fn identical_suite_through_both_facade_variants() {
     .unwrap();
     let survivor = Volatile::valkey(
         network.clone(),
-        Scope::new("valkey-survivor", "facade").unwrap(),
+        scope("valkey-survivor"),
         limits(),
         clock.clone(),
     )
@@ -216,14 +215,9 @@ async fn identical_suite_through_both_facade_variants() {
     assert_eq!(format!("{a:?}"), "Volatile(Valkey)");
     assert_eq!(a.reopen().await, Err(Error::Closed));
     clock.set(start);
-    let quota_store = Volatile::valkey(
-        network.clone(),
-        Scope::new("quota", "facade").unwrap(),
-        limits(),
-        clock.clone(),
-    )
-    .await
-    .unwrap();
+    let quota_store = Volatile::valkey(network.clone(), scope("quota"), limits(), clock.clone())
+        .await
+        .unwrap();
     let Volatile::Valkey(child) = &quota_store else {
         unreachable!()
     };
@@ -278,7 +272,7 @@ async fn identical_suite_through_both_facade_variants() {
     assert!(matches!(
         Volatile::valkey(
             network,
-            Scope::new("bad", "facade").unwrap(),
+            scope("bad"),
             Limits {
                 records: 0,
                 ..limits()
