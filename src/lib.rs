@@ -72,6 +72,12 @@ impl<C: Clock, N: Network> Store for Volatile<C, N> {
             Self::Valkey(s) => s.get(key).await,
         }
     }
+    async fn check_current(&self, batch: &[cmmr::Check]) -> Result<(), Error> {
+        match self {
+            Self::Memory(s) => s.check_current(batch).await,
+            Self::Valkey(s) => s.check_current(batch).await,
+        }
+    }
     async fn compare_exchange(&self, batch: &[Write]) -> Result<(), Error> {
         match self {
             Self::Memory(s) => s.compare_exchange(batch).await,
