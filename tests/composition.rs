@@ -160,12 +160,12 @@ async fn identical_suite_through_both_facade_variants() {
     // Unique Valkey keyspace per test-process execution: verify.sh runs cargo
     // test then llvm-cov against one disposable Valkey, so the second phase
     // would Conflict on the first phase's keys.
-    let run = SystemTime::now()
+    let keyspace = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let pid = std::process::id();
-    let scope = |base: &str| Scope::new(format!("{base}-{run}-{pid}"), "facade").unwrap();
+    let scope = |base: &str| Scope::new(format!("{base}-{keyspace}-{pid}"), "facade").unwrap();
     let connection =
         redis::Client::open(std::env::var("VALKEY_URL").expect("disposable Valkey required"))
             .unwrap()
