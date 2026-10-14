@@ -18,6 +18,7 @@ valkey-cli -p "$VALKEY_PORT" ping
 export VALKEY_URL="redis://127.0.0.1:${VALKEY_PORT}/"
 
 rustc --version
+bash .ci/update-our-crates.sh
 cargo metadata --locked --all-features --format-version 1 > dependency-metadata.json
 python3 .github/check-first-party.py
 cargo fmt --all
