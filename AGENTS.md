@@ -12,7 +12,7 @@ Write comments and documentation in English.
 
 ## Quality boundary
 
-- No workstation Cargo commands. GitHub Actions runs formatting, Clippy and tests.
+- No local Cargo commands. GitHub Actions runs formatting, Clippy and tests.
 - Use real disposable Valkey in CI; tests need no external accounts.
 - First-party Git dependencies follow branch main; preserve exactly one resolved revision per crate in Cargo.lock.
 - Commit explicit paths in small imperative English steps; no AI attribution.
