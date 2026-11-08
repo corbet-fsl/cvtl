@@ -4,15 +4,15 @@ version = "0.1.0"
 edition = "2024"
 description = "Volatile: thin composition of Memory and Valkey storage"
 license-file = "LICENSE.md"
-repository = "https://git.corbet.ch/corbet-libs/cvtl.git"
+repository = "https://git.corbet.ch/corbet-fsl/cvtl.git"
 publish = false
 
 [dependencies]
-cmmr = { git = "https://git.corbet.ch/corbet-foss/cmmr.git", branch = "main" }
+cmmr = { git = "https://git.corbet.ch/corbet-libre/cmmr.git", branch = "main" }
 cvlk = { git = "https://git.corbet.ch/corbet-foss/cvlk.git", branch = "main" }
 
 [dev-dependencies]
-cmmr = { git = "https://git.corbet.ch/corbet-foss/cmmr.git", branch = "main", features = ["conformance"] }
+cmmr = { git = "https://git.corbet.ch/corbet-libre/cmmr.git", branch = "main", features = ["conformance"] }
 redis = { version = "1", default-features = false, features = ["tokio-comp"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
