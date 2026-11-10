@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 cmmr = { git = "https://git.corbet.ch/corbet-libre/cmmr.git", branch = "main" }
-cvlk = { git = "https://git.corbet.ch/corbet-foss/cvlk.git", branch = "main" }
+cvlk = { git = "https://git.corbet.ch/corbet-libre/cvlk.git", branch = "main" }
 
 [dev-dependencies]
 cmmr = { git = "https://git.corbet.ch/corbet-libre/cmmr.git", branch = "main", features = ["conformance"] }
